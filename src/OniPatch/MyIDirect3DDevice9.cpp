@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MyIDirect3DDevice9.h"
+#include "Config.h"
 
 MyIDirect3DDevice9::MyIDirect3DDevice9(IDirect3DDevice9 *original)
 {
@@ -67,7 +68,14 @@ ULONG MyIDirect3DDevice9::Release(THIS)
 /*** IDirect3DDevice9 methods ***/
 HRESULT MyIDirect3DDevice9::TestCooperativeLevel(THIS)
 {
-    return this->original->TestCooperativeLevel();
+    const HRESULT hr = this->original->TestCooperativeLevel();
+
+    static HRESULT last = S_OK;
+    if (hr != last) {
+        OniLog("TestCooperativeLevel -> hr=0x%08lX", (unsigned long)hr);
+        last = hr;
+    }
+    return hr;
 }
 
 UINT MyIDirect3DDevice9::GetAvailableTextureMem(THIS)
@@ -112,6 +120,9 @@ void MyIDirect3DDevice9::SetCursorPosition(int X, int Y, DWORD Flags)
 
 BOOL MyIDirect3DDevice9::ShowCursor(BOOL bShow)
 {
+    // HideCursor=1: keep D3D's own (exclusive fullscreen) cursor hidden too.
+    if (GetConfig().hideCursor && GameHasFocus())
+        bShow = FALSE;
     return this->original->ShowCursor(bShow);
 }
 
@@ -132,12 +143,62 @@ UINT MyIDirect3DDevice9::GetNumberOfSwapChains(THIS)
 
 HRESULT MyIDirect3DDevice9::Reset(D3DPRESENT_PARAMETERS *pPresentationParameters)
 {
-    return this->original->Reset(pPresentationParameters);
+    if (pPresentationParameters == nullptr) {
+        return this->original->Reset(pPresentationParameters);
+    }
+
+    D3DDEVICE_CREATION_PARAMETERS cp = {};
+    IDirect3D9 *d3d = nullptr;
+
+    if (SUCCEEDED(this->original->GetCreationParameters(&cp)) &&
+        SUCCEEDED(this->original->GetDirect3D(&d3d))) {
+        ApplyDisplayConfig(pPresentationParameters, d3d, cp.AdapterOrdinal);
+        d3d->Release();
+    }
+
+    const bool forcedExclusive = (GetConfig().mode == DisplayMode::Fullscreen) && !pPresentationParameters->Windowed;
+
+    HRESULT hResult = this->original->Reset(pPresentationParameters);
+    OniLog("Reset -> hr=0x%08lX", (unsigned long)hResult);
+
+    // Only INVALIDCALL means the parameters were rejected; DEVICELOST just means
+    // we're alt-tabbed and the game will try again.
+    if (hResult == D3DERR_INVALIDCALL && forcedExclusive) {
+        OniLog("Exclusive Reset rejected, retrying windowed");
+        ApplyWindowedFallback(pPresentationParameters);
+        hResult = this->original->Reset(pPresentationParameters);
+        OniLog("Reset (windowed fallback) -> hr=0x%08lX", (unsigned long)hResult);
+    }
+
+    if (SUCCEEDED(hResult)) {
+        // Re-assert the window position; the game may have resized it around the Reset.
+        HWND hwnd = pPresentationParameters->hDeviceWindow ? pPresentationParameters->hDeviceWindow : cp.hFocusWindow;
+        PinWindowToMonitor(hwnd);
+    }
+
+    return hResult;
 }
 
 HRESULT MyIDirect3DDevice9::Present(CONST RECT *pSourceRect, CONST RECT *pDestRect, HWND hDestWindowOverride, CONST RGNDATA *pDirtyRegion)
 {
-    return this->original->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+    static unsigned frame = 0;
+    ++frame;
+
+    // Safety net: if the window drifted away from its target, put it back.
+    if ((frame % 30) == 0) {
+        D3DDEVICE_CREATION_PARAMETERS cp = {};
+        if (SUCCEEDED(this->original->GetCreationParameters(&cp)))
+            EnforceBorderless(cp.hFocusWindow);
+    }
+
+    HRESULT hr = this->original->Present(pSourceRect, pDestRect, hDestWindowOverride, pDirtyRegion);
+
+    static HRESULT lastHr = S_OK;
+    if (frame <= 3 || (frame % 600) == 0 || hr != lastHr)
+        OniLog("Present#%u -> hr=0x%08lX", frame, (unsigned long)hr);
+    lastHr = hr;
+
+    return hr;
 }
 
 HRESULT MyIDirect3DDevice9::GetBackBuffer(UINT iSwapChain, UINT iBackBuffer, D3DBACKBUFFER_TYPE Type, IDirect3DSurface9 **ppBackBuffer)

@@ -1,5 +1,6 @@
 #include "pch.h"
 #include "MyIDirect3D9.h"
+#include "Config.h"
 
 MyIDirect3D9::MyIDirect3D9(IDirect3D9 *original)
 {
@@ -53,17 +54,19 @@ UINT MyIDirect3D9::GetAdapterModeCount(THIS_ UINT Adapter, D3DFORMAT Format)
 
 HRESULT MyIDirect3D9::EnumAdapterModes(THIS_ UINT Adapter, D3DFORMAT Format, UINT Mode, D3DDISPLAYMODE *pMode)
 {
-    TraceFunc();
+    HRESULT hResult = this->original->EnumAdapterModes(Adapter, Format, Mode, pMode);
 
-    TraceParam("Adapter", Adapter);
-    TraceParam("D3DFORMAT", Format);
-    TraceParam("Mode", Mode);
-    TraceParam("pMode ADDR", pMode);
-    TraceParam("d3dDisplayMode Width", pMode->Width);
-    TraceParam("d3dDisplayMode Height", pMode->Height);
-    TraceParam("d3dDisplayMode Refresh", pMode->RefreshRate);
+    if (SUCCEEDED(hResult) && pMode != nullptr) {
+        TraceFunc();
+        TraceParam("Adapter", Adapter);
+        TraceParam("D3DFORMAT", Format);
+        TraceParam("Mode", Mode);
+        TraceParam("d3dDisplayMode Width", pMode->Width);
+        TraceParam("d3dDisplayMode Height", pMode->Height);
+        TraceParam("d3dDisplayMode Refresh", pMode->RefreshRate);
+    }
 
-    return this->original->EnumAdapterModes(Adapter, Format, Mode, pMode);
+    return hResult;
 }
 
 HRESULT MyIDirect3D9::GetAdapterDisplayMode(THIS_ UINT Adapter, D3DDISPLAYMODE *pMode)
@@ -110,6 +113,10 @@ HRESULT MyIDirect3D9::CreateDevice(THIS_ UINT Adapter, D3DDEVTYPE DeviceType, HW
 {
     TraceFunc();
 
+    if (pPresentationParameters == nullptr) {
+        return this->original->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, ppReturnedDeviceInterface);
+    }
+
     TraceParam("BackBufferWidth", pPresentationParameters->BackBufferWidth);
     TraceParam("BackBufferHeight", pPresentationParameters->BackBufferHeight);
     TraceParam("Windowed", pPresentationParameters->Windowed);
@@ -119,22 +126,36 @@ HRESULT MyIDirect3D9::CreateDevice(THIS_ UINT Adapter, D3DDEVTYPE DeviceType, HW
     TraceParam("AutoDepthStencilFormat", pPresentationParameters->AutoDepthStencilFormat);
     TraceParam("PresentationInterval", pPresentationParameters->PresentationInterval);
 
-    if (pPresentationParameters->BackBufferWidth == 800) {
-
-        TraceMsg("Back buffer updated");
-
-        // TODO: Read this from configuration
-        pPresentationParameters->BackBufferWidth = 1920;
-        pPresentationParameters->BackBufferHeight = 1080;
-
-        //pPresentationParameters->Windowed = FALSE;
-    }
+    // Always apply the configured display mode (not just for the game's default
+    // 800 wide request), so the back buffer and window can't get out of sync.
+    TraceMsg("Applying display config");
+    ApplyDisplayConfig(pPresentationParameters, this->original, Adapter);
 
     IDirect3DDevice9 *trueDevice = nullptr;
 
+    const bool forcedExclusive = (GetConfig().mode == DisplayMode::Fullscreen) && !pPresentationParameters->Windowed;
+
     HRESULT hResult = this->original->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, &trueDevice);
 
-    (*ppReturnedDeviceInterface) = new MyIDirect3DDevice9(trueDevice);
+    if (FAILED(hResult) && forcedExclusive) {
+        OniLog("Exclusive CreateDevice failed hr=0x%08lX, retrying windowed", (unsigned long)hResult);
+        ApplyWindowedFallback(pPresentationParameters);
+        trueDevice = nullptr;
+        hResult = this->original->CreateDevice(Adapter, DeviceType, hFocusWindow, BehaviorFlags, pPresentationParameters, &trueDevice);
+    }
+
+    OniLog("CreateDevice -> hr=0x%08lX behavior=0x%lX focusWnd=%p", (unsigned long)hResult, (unsigned long)BehaviorFlags, (void *)hFocusWindow);
+
+    if (SUCCEEDED(hResult) && trueDevice != nullptr) {
+        // The game (or D3D) may have resized the window while creating the device.
+        HWND hwnd = pPresentationParameters->hDeviceWindow ? pPresentationParameters->hDeviceWindow : hFocusWindow;
+        PinWindowToMonitor(hwnd);
+
+        (*ppReturnedDeviceInterface) = new MyIDirect3DDevice9(trueDevice);
+    }
+    else {
+        (*ppReturnedDeviceInterface) = nullptr;
+    }
 
     return hResult;
 }
