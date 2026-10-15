@@ -20,3 +20,8 @@ Onimusha in 1920x1080
 
 Configure input
 ![image](https://user-images.githubusercontent.com/5740369/140755030-882cac2b-89f0-4b14-8c95-096da3573139.png)
+
+## Windows Defender Detection (Win32/DefenceEvasion.A!ml)
+That detection is a machine-learning heuristic (the `!ml` suffix), not a signature match. It triggers because the injector does exactly what malware loaders do: `CreateProcess(CREATE_SUSPENDED)`, then `VirtualAllocEx`, `WriteProcessMemory`, and `CreateRemoteThread(LoadLibraryA)`. Windows Defender can’t tell a game patcher from a trojan by that sequence, so it’s a false positive, but a predictable one.
+
+Been thinking if I should use a .dll proxy in the future.
