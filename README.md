@@ -8,6 +8,8 @@
 2. Copy dsound.dll, Oni3Patch.dll and Oni3Patch.ini to Onimusha 3 directory.
 3. Run Oni3.exe
 
+Optional: [Game update v1.2.0.0](https://community.pcgamingwiki.com/files/file/4144-onimusha-3-demon-siege-widescreen-fix/)
+
 ## How it works
 dsound.dll injects Oni3Patch.dll into the game (oni3.exe).
 
