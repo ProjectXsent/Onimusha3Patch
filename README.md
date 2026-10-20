@@ -4,12 +4,12 @@
 2. Fix the Configure input menu (see Configure input patch directory).
 
 ## How to use
-1. Compile solution
-2. Copy OniInjector.exe and OniPatch.dll to Onimusha 3 directory.
-3. Run OniInjector.exe
+1. Run build.bat
+2. Copy dsound.dll, Oni3Patch.dll and Oni3Patch.ini to Onimusha 3 directory.
+3. Run Oni3.exe
 
 ## How it works
-OniInjector.exe injects OniPatch.dll into the game (oni3.exe).
+dsound.dll injects Oni3Patch.dll into the game (oni3.exe).
 
 OniPatch.dll hooks DirectX 9 and CreateWindowExW to force the resolution size.
 
@@ -24,4 +24,4 @@ Configure input
 ## Windows Defender Detection (Win32/DefenceEvasion.A!ml)
 That detection is a machine-learning heuristic (the `!ml` suffix), not a signature match. It triggers because the injector does exactly what malware loaders do: `CreateProcess(CREATE_SUSPENDED)`, then `VirtualAllocEx`, `WriteProcessMemory`, and `CreateRemoteThread(LoadLibraryA)`. Windows Defender can’t tell a game patcher from a trojan by that sequence, so it’s a false positive, but a predictable one.
 
-Been thinking if I should use a .dll proxy in the future.
+Been thinking if I should use a .dll proxy in the future. (Done)
