@@ -5,7 +5,7 @@
 
 ## How to use
 
-1. Download the [latest release](https://github.com/ProjectXsent/onimusha3-gamepad-fix/releases/latest).
+1. Download the [latest release](https://github.com/ProjectXsent/Onimusha3Patch/releases/latest).
 2. Extract/copy `dsound.dll`, `Oni3Patch.dll` and `Oni3Patch.ini` to Onimusha 3 game directory.
 3. Run `Oni3.exe`.
 
